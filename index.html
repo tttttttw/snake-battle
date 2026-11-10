@@ -55,9 +55,10 @@ button{pointer-events:auto;cursor:pointer;border:0;border-radius:999px;padding:1
     <p>复刻 Slither 风格 · 吃光点变长变粗，围住别人、让别人撞到你身上！<br>撞到别人身体就结束，千万别撞墙边红圈。</p>
     <input id="name" placeholder="输入昵称" value="" maxlength="12">
     <div class="skins" id="skins"></div>
-    <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px;cursor:pointer;font-weight:700;color:#fde047"><input type="checkbox" id="godToggle" style="width:18px;height:18px;text-align:left"> 👑 GOD MODE 无敌模式</label>
+    <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 8px;cursor:pointer;font-weight:700;color:#fde047"><input type="checkbox" id="godToggle" style="width:18px;height:18px;text-align:left"> 👑 GOD MODE 无敌模式</label>
+    <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px;cursor:pointer;font-weight:700;color:#fb923c"><input type="checkbox" id="turboToggle" style="width:18px;height:18px;text-align:left"> 🔥 爽版模式 TURBO</label>
     <button class="btn-main" id="play">开始游戏</button>
-    <div class="controls">🖱️ 鼠标：控制方向<br>🚀 鼠标左键按住 / 空格：加速（会掉长度）<br>👑 按 G：开关 God Mode — 无敌、不掉长度、撞墙/撞蛇不死、无限加速<br>📱 手机：左侧摇杆转向，右侧按钮加速<br>💡 小技巧：加速绕圈围杀大蛇，吃它掉落的光点瞬间暴涨</div>
+    <div class="controls">🖱️ 鼠标：控制方向<br>🚀 鼠标左键按住 / 空格：加速（会掉长度）<br>👑 按 G：开关 God Mode — 无敌、不掉长度、撞墙/撞蛇不死、无限加速<br>🔥 按 T：开关爽版 — 小地图挤满蛇、死亡爆一大片大光点、磁吸吃食、双倍成长、击杀奖励<br>📱 手机：左侧摇杆转向，右侧按钮加速<br>💡 小技巧：加速绕圈围杀大蛇，吃它掉落的光点瞬间暴涨</div>
   </div>
   <div class="card" id="dead">
     <h1>游戏结束</h1>
@@ -70,9 +71,10 @@ button{pointer-events:auto;cursor:pointer;border:0;border-radius:999px;padding:1
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const mini=document.getElementById('minimap'),mctx=mini.getContext('2d');
 let W,H;function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}addEventListener('resize',resize);resize();
-const WORLD=3200; // world radius-ish square half
+let WORLD=2000; // world half-size, turbo shrinks it more
 let running=false, mouse={x:innerWidth/2,y:innerHeight/2,down:false}, joy={active:false,dx:0,dy:0};
 let godMode=false;
+let turboMode=false;
 function randomName(){return 'User'+Math.floor(1000+Math.random()*9000)}
 try{document.getElementById('name').value=randomName()}catch(e){}
 window.addEventListener('DOMContentLoaded',()=>{let n=document.getElementById('name'); if(!n.value) n.value=randomName()});
@@ -112,17 +114,23 @@ class Snake{
       if(best) this.wander=Math.atan2(best.y-this.head.y,best.x-this.head.x);
       // avoid border
       if(Math.abs(this.head.x)>WORLD-180||Math.abs(this.head.y)>WORLD-180) this.wander=Math.atan2(-this.head.y,-this.head.x)+rand(-.4,.4);
-      // avoid other snakes
-      let all=[player,...bots];
-      for(let s of all){ if(s===this||s.dead) continue; for(let i=6;i<s.segments.length;i+=8){ if(dist2(this.head,s.segments[i])<120*120){ this.wander=Math.atan2(this.head.y-s.segments[i].y,this.head.x-s.segments[i].x); } } }
+      // avoid other snakes (turbo: bots don't avoid -> crash a lot more)
+      if(!turboMode){
+        let all=[player,...bots];
+        for(let s of all){ if(s===this||s.dead) continue; for(let i=6;i<s.segments.length;i+=8){ if(dist2(this.head,s.segments[i])<120*120){ this.wander=Math.atan2(this.head.y-s.segments[i].y,this.head.x-s.segments[i].x); } } }
+      } else if(player && !player.dead && Math.random()<0.45){
+        // turbo: charge toward near player body so they feed you
+        let target=player.segments[Math.min(player.segments.length-1, 20+Math.floor(Math.random()*30))];
+        this.wander=Math.atan2(target.y-this.head.y, target.x-this.head.x);
+      }
     }
     this.targetAngle=this.wander+Math.sin(Date.now()/600+this.x)*0.15;
     this.boost = this.length>30 && Math.random()<0.008;
   }
   let diff=((this.targetAngle-this.angle+Math.PI*3)%(Math.PI*2))-Math.PI;
-  let turn= this.boost?0.06:0.09;
+  let turn= this.boost?0.06:0.09; if(this.isPlayer && turboMode) turn=0.13;
   this.angle+=Math.max(-turn,Math.min(turn,diff));
-  let sp=this.speed*(this.boost?1.85:1)*(this.isPlayer?1:rand(.96,1.04));
+  let sp=this.speed*(this.boost?1.85:1)*(this.isPlayer?(turboMode?1.25:1):rand(.96,1.04));
   // thicker = slower slightly
   sp*= Math.max(.82, 1-(this.radius-10)/220);
   let hx=this.head.x+Math.cos(this.angle)*sp, hy=this.head.y+Math.sin(this.angle)*sp;
@@ -136,9 +144,13 @@ class Snake{
     this.length-=0.045;
     if(Math.random()<0.35) foods.push({x:this.head.x-Math.cos(this.angle)*this.radius+rand(-6,6),y:this.head.y-Math.sin(this.angle)*this.radius+rand(-6,6),r:rand(3,5),c:this.color[0],v:1});
   }
+  // magnet in turbo for player
+  if(this.isPlayer && turboMode){
+    foods.forEach(f=>{let d2=dist2(this.head,f); if(d2<170*170){let d=Math.sqrt(d2)||1; f.x+=(this.head.x-f.x)/d*4.2; f.y+=(this.head.y-f.y)/d*4.2;}});
+  }
   // eat food
   for(let i=foods.length-1;i>=0;i--){
-    let f=foods[i]; if(dist2(this.head,f)<(this.radius+ f.r+6)**2){ this.length+= f.v||1; foods.splice(i,1); spawnFood(1); if(this.isPlayer) updateHUD(); }
+    let f=foods[i]; if(dist2(this.head,f)<(this.radius+ f.r+6)**2){ let gain=(f.v||1)*(this.isPlayer&&turboMode?2:1); this.length+=gain; foods.splice(i,1); spawnFood(1); if(this.isPlayer) updateHUD(); }
   }
   // border death (god mode: bounce back, no death)
   if(Math.abs(hx)>WORLD||Math.abs(hy)>WORLD){ if(this.isPlayer && godMode){ this.angle+=Math.PI; this.segments[0].x=Math.max(-WORLD+5,Math.min(WORLD-5,hx)); this.segments[0].y=Math.max(-WORLD+5,Math.min(WORLD-5,hy)); } else killSnake(this); }
@@ -175,18 +187,23 @@ function spawnFood(n=1, x,y){
 }
 function killSnake(s){
  if(s.dead) return; s.dead=true;
- s.segments.forEach((seg,i)=>{ if(i%3==0) foods.push({x:seg.x,y:seg.y,r:rand(4,7),c:s.color[0],v:2.2}) });
+ // JUICY DROPS: every segment drops, big glowing orbs, turbo = even bigger & more
+ let step = turboMode?1:2;
+ s.segments.forEach((seg,i)=>{ if(i%step==0) foods.push({x:seg.x+rand(-14,14),y:seg.y+rand(-14,14),r:turboMode?rand(7,13):rand(5,10),c:s.color[0],v:turboMode?5:3.2}) });
+ // explosion particles
+ for(let i=0;i<(turboMode?70:40);i++){ let seg=s.segments[Math.floor(Math.random()*s.segments.length)]; particles.push({x:seg.x,y:seg.y,vx:rand(-4,4),vy:rand(-4,4),life:rand(25,55),max:55,r:rand(2,6),c:s.color[0]}); }
  if(s.isPlayer){ gameOver(); } else {
-   showKill(`你围杀了 ${s.name}！`);
+   showKill(turboMode?`💥 爆了！${s.name} 掉了一地大光点！`:`你围杀了 ${s.name}！`);
+   if(player && !player.dead && turboMode) player.length+=8; // kill reward in turbo
    if(player && !player.dead){ /* credit nearest? simple: if player alive random credit when bot dies near player */ }
    setTimeout(()=>{ if(running){ let idx=bots.indexOf(s); if(idx>=0) bots.splice(idx,1); bots.push(makeBot()); } },800);
  }
 }
 function makeBot(){
- let a=rand(0,Math.PI*2), d=rand(400,2200); let x=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.x:0)+Math.cos(a)*d)); let y=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.y:0)+Math.sin(a)*d));
- let b=new Snake(x,y,rand(0,Math.PI*2),COLORS[Math.floor(Math.random()*COLORS.length)],NAMES[Math.floor(Math.random()*NAMES.length)]); b.length=rand(10,90); return b;
+ let a=rand(0,Math.PI*2), d=turboMode?rand(180,650):rand(200,900); let x=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.x:0)+Math.cos(a)*d)); let y=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.y:0)+Math.sin(a)*d));
+ let b=new Snake(x,y,rand(0,Math.PI*2),COLORS[Math.floor(Math.random()*COLORS.length)],NAMES[Math.floor(Math.random()*NAMES.length)]); b.length=turboMode?rand(40,140):rand(15,90); return b;
 }
-function updateHUD(){document.getElementById('len').textContent=Math.floor(player.length)+(godMode?' 👑GOD':'');document.getElementById('kills').textContent=player.kills}
+function updateHUD(){document.getElementById('len').textContent=Math.floor(player.length)+(godMode?' 👑GOD':'')+(turboMode?' 🔥爽版':'');document.getElementById('kills').textContent=player.kills}
 let killTimer;
 function showKill(t){let el=document.getElementById('kill');el.textContent=t;el.style.display='block';clearTimeout(killTimer);killTimer=setTimeout(()=>el.style.display='none',2200)}
 function checkCollisions(){
@@ -224,6 +241,9 @@ function draw(){
  ctx.strokeStyle='#ef4444';ctx.lineWidth=6;ctx.strokeRect(-WORLD-cam.x+W/2,-WORLD-cam.y+H/2,WORLD*2,WORLD*2);
  // foods
  foods.forEach(f=>{let sx=f.x-cam.x+W/2, sy=f.y-cam.y+H/2; if(sx<-20||sx>W+20||sy<-20||sy>H+20)return; ctx.beginPath();ctx.arc(sx,sy,f.r,0,Math.PI*2);ctx.fillStyle=f.c;ctx.shadowColor=f.c;ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0});
+ // particles
+ particles=particles.filter(pt=>pt.life>0);
+ particles.forEach(pt=>{pt.x+=pt.vx;pt.y+=pt.vy;pt.life--; let sx=pt.x-cam.x+W/2, sy=pt.y-cam.y+H/2; ctx.globalAlpha=Math.max(0,pt.life/pt.max); ctx.beginPath();ctx.arc(sx,sy,pt.r,0,Math.PI*2);ctx.fillStyle=pt.c;ctx.fill();ctx.globalAlpha=1;});
  bots.forEach(b=>b.draw(cam)); if(player) player.draw(cam);
  // leaderboard
  let all=[player,...bots].filter(Boolean).sort((a,b)=>b.length-a.length).slice(0,8);
@@ -233,22 +253,24 @@ function draw(){
  let all2=[player,...bots].filter(s=>s&&!s.dead); all2.forEach(s=>{let x=75+s.head.x/WORLD*70,y=75+s.head.y/WORLD*70;mctx.beginPath();mctx.arc(x,y,s.isPlayer?5:3,0,Math.PI*2);mctx.fillStyle=s.isPlayer?'#fde047':s.color[0];mctx.fill()});
 }
 function loop(){
- if(running){ player.update(); bots.forEach(b=>b.update()); checkCollisions(); if(player&&!player.dead) updateHUD(); }
+ if(running){ player.update(); bots.forEach(b=>b.update()); checkCollisions(); if(turboMode && Math.random()<0.06 && player && !player.dead) spawnFood(2, player.head.x+rand(-300,300), player.head.y+rand(-300,300)); if(player&&!player.dead) updateHUD(); }
  draw(); requestAnimationFrame(loop);
 }
 function start(){
  let name=document.getElementById('name').value.trim()||randomName();
  godMode=document.getElementById('godToggle').checked;
- player=new Snake(0,0,0,COLORS[skinIdx],name,true); player.length= godMode?60:10;
- bots=[]; for(let i=0;i<14;i++) bots.push(makeBot());
- foods=[]; spawnFood(450);
+ turboMode=document.getElementById('turboToggle').checked;
+ WORLD = turboMode?1300:2000;
+ player=new Snake(0,0,0,COLORS[skinIdx],name,true); player.length= godMode?(turboMode?120:60):(turboMode?50:10);
+ bots=[]; let botCount=turboMode?24:18; for(let i=0;i<botCount;i++) bots.push(makeBot());
+ foods=[]; particles=[]; spawnFood(turboMode?800:650);
  document.getElementById('center').style.display='none'; running=true; updateHUD();
 }
 document.getElementById('play').onclick=start;
 document.getElementById('again').onclick=()=>{document.getElementById('dead').style.display='none';document.getElementById('menu').style.display='block';document.getElementById('center').style.display='flex'; if(false) start(); else { document.getElementById('center').style.display='flex'; } start(); };
 addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY});
 addEventListener('mousedown',()=>mouse.down=true); addEventListener('mouseup',()=>mouse.down=false);
-let keys={}; addEventListener('keydown',e=>{keys.space=e.code==='Space'; if(e.code==='KeyG'){godMode=!godMode; let t=document.getElementById('godToggle'); if(t)t.checked=godMode; showKill(godMode?'👑 GOD MODE ON 无敌开启':'GOD MODE OFF'); if(player)updateHUD();}}); addEventListener('keyup',e=>{if(e.code==='Space')keys.space=false});
+let keys={}; addEventListener('keydown',e=>{keys.space=e.code==='Space'; if(e.code==='KeyG'){godMode=!godMode; let t=document.getElementById('godToggle'); if(t)t.checked=godMode; showKill(godMode?'👑 GOD MODE ON 无敌开启':'GOD MODE OFF'); if(player)updateHUD();} if(e.code==='KeyT'){turboMode=!turboMode; let t2=document.getElementById('turboToggle'); if(t2)t2.checked=turboMode; WORLD=turboMode?1300:2000; showKill(turboMode?'🔥 爽版 ON：磁吸+双倍+大掉落':'爽版 OFF'); if(player)updateHUD();}}); addEventListener('keyup',e=>{if(e.code==='Space')keys.space=false});
 let boostTouch=false;
 document.getElementById('boostBtn').addEventListener('touchstart',e=>{e.preventDefault();boostTouch=true}); document.getElementById('boostBtn').addEventListener('touchend',()=>boostTouch=false);
 // joystick
