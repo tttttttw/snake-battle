@@ -53,10 +53,11 @@ button{pointer-events:auto;cursor:pointer;border:0;border-radius:999px;padding:1
   <div class="card" id="menu">
     <h1>贪食蛇<span>大作战</span></h1>
     <p>复刻 Slither 风格 · 吃光点变长变粗，围住别人、让别人撞到你身上！<br>撞到别人身体就结束，千万别撞墙边红圈。</p>
-    <input id="name" placeholder="输入昵称" value="Tianran" maxlength="12">
+    <input id="name" placeholder="输入昵称" value="" maxlength="12">
     <div class="skins" id="skins"></div>
+    <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px;cursor:pointer;font-weight:700;color:#fde047"><input type="checkbox" id="godToggle" style="width:18px;height:18px;text-align:left"> 👑 GOD MODE 无敌模式</label>
     <button class="btn-main" id="play">开始游戏</button>
-    <div class="controls">🖱️ 鼠标：控制方向<br>🚀 鼠标左键按住 / 空格：加速（会掉长度）<br>📱 手机：左侧摇杆转向，右侧按钮加速<br>💡 小技巧：加速绕圈围杀大蛇，吃它掉落的光点瞬间暴涨</div>
+    <div class="controls">🖱️ 鼠标：控制方向<br>🚀 鼠标左键按住 / 空格：加速（会掉长度）<br>👑 按 G：开关 God Mode — 无敌、不掉长度、撞墙/撞蛇不死、无限加速<br>📱 手机：左侧摇杆转向，右侧按钮加速<br>💡 小技巧：加速绕圈围杀大蛇，吃它掉落的光点瞬间暴涨</div>
   </div>
   <div class="card" id="dead">
     <h1>游戏结束</h1>
@@ -71,6 +72,10 @@ const mini=document.getElementById('minimap'),mctx=mini.getContext('2d');
 let W,H;function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}addEventListener('resize',resize);resize();
 const WORLD=3200; // world radius-ish square half
 let running=false, mouse={x:innerWidth/2,y:innerHeight/2,down:false}, joy={active:false,dx:0,dy:0};
+let godMode=false;
+function randomName(){return 'User'+Math.floor(1000+Math.random()*9000)}
+try{document.getElementById('name').value=randomName()}catch(e){}
+window.addEventListener('DOMContentLoaded',()=>{let n=document.getElementById('name'); if(!n.value) n.value=randomName()});
 let player, bots=[], foods=[], particles=[];
 const COLORS=[
  ['#22c55e','#16a34a'],['#3b82f6','#1d4ed8'],['#ec4899','#be185d'],['#f59e0b','#d97706'],
@@ -97,7 +102,7 @@ class Snake{
     let cx=W/2,cy=H/2;
     if(joy.active && (joy.dx||joy.dy)){ this.targetAngle=Math.atan2(joy.dy,joy.dx); }
     else { this.targetAngle=Math.atan2(mouse.y-cy,mouse.x-cx); }
-    this.boost=(mouse.down||keys.space||boostTouch) && this.length>12;
+    this.boost=(mouse.down||keys.space||boostTouch) && (godMode || this.length>12);
   } else {
     this.aiTimer--;
     if(this.aiTimer<=0){
@@ -127,7 +132,7 @@ class Snake{
   while(this.segments.length>target) this.segments.pop();
   while(this.segments.length<target) this.segments.push({...this.segments[this.segments.length-1]});
   this.radius=10+Math.min(26, Math.sqrt(this.length)*1.15);
-  if(this.boost && this.length>12){
+  if(this.boost && this.length>12 && !(this.isPlayer && godMode)){
     this.length-=0.045;
     if(Math.random()<0.35) foods.push({x:this.head.x-Math.cos(this.angle)*this.radius+rand(-6,6),y:this.head.y-Math.sin(this.angle)*this.radius+rand(-6,6),r:rand(3,5),c:this.color[0],v:1});
   }
@@ -135,8 +140,8 @@ class Snake{
   for(let i=foods.length-1;i>=0;i--){
     let f=foods[i]; if(dist2(this.head,f)<(this.radius+ f.r+6)**2){ this.length+= f.v||1; foods.splice(i,1); spawnFood(1); if(this.isPlayer) updateHUD(); }
   }
-  // border death
-  if(Math.abs(hx)>WORLD||Math.abs(hy)>WORLD) killSnake(this);
+  // border death (god mode: bounce back, no death)
+  if(Math.abs(hx)>WORLD||Math.abs(hy)>WORLD){ if(this.isPlayer && godMode){ this.angle+=Math.PI; this.segments[0].x=Math.max(-WORLD+5,Math.min(WORLD-5,hx)); this.segments[0].y=Math.max(-WORLD+5,Math.min(WORLD-5,hy)); } else killSnake(this); }
  }
  draw(cam){
   if(this.dead) return;
@@ -157,8 +162,9 @@ class Snake{
     ctx.beginPath();ctx.arc(exx,eyy,this.radius*0.38,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
     ctx.beginPath();ctx.arc(exx+ex*3,eyy+ey*3,this.radius*0.19,0,Math.PI*2);ctx.fillStyle='#111';ctx.fill();
   });
+  if(this.isPlayer && godMode){ctx.beginPath();ctx.arc(hx,hy,this.radius+6,0,Math.PI*2);ctx.strokeStyle='#fde047';ctx.lineWidth=3;ctx.stroke()}
   // name
-  ctx.fillStyle='rgba(255,255,255,.9)';ctx.font='600 13px system-ui';ctx.textAlign='center';ctx.fillText(this.name, hx, hy-this.radius-10);
+  ctx.fillStyle='rgba(255,255,255,.9)';ctx.font='600 13px system-ui';ctx.textAlign='center';ctx.fillText((this.isPlayer&&godMode?'👑 ':'')+this.name, hx, hy-this.radius-10);
  }
 }
 function spawnFood(n=1, x,y){
@@ -180,12 +186,13 @@ function makeBot(){
  let a=rand(0,Math.PI*2), d=rand(400,2200); let x=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.x:0)+Math.cos(a)*d)); let y=Math.max(-WORLD+100,Math.min(WORLD-100,(player?player.head.y:0)+Math.sin(a)*d));
  let b=new Snake(x,y,rand(0,Math.PI*2),COLORS[Math.floor(Math.random()*COLORS.length)],NAMES[Math.floor(Math.random()*NAMES.length)]); b.length=rand(10,90); return b;
 }
-function updateHUD(){document.getElementById('len').textContent=Math.floor(player.length);document.getElementById('kills').textContent=player.kills}
+function updateHUD(){document.getElementById('len').textContent=Math.floor(player.length)+(godMode?' 👑GOD':'');document.getElementById('kills').textContent=player.kills}
 let killTimer;
 function showKill(t){let el=document.getElementById('kill');el.textContent=t;el.style.display='block';clearTimeout(killTimer);killTimer=setTimeout(()=>el.style.display='none',2200)}
 function checkCollisions(){
  let all=[player,...bots].filter(s=>s&&!s.dead);
  for(let s of all){
+   if(s.isPlayer && godMode) continue;
    for(let other of all){ if(s===other) continue;
      for(let i=8;i<other.segments.length;i+=3){
        if(dist2(s.head,other.segments[i]) < (other.radius*0.92)**2){
@@ -230,8 +237,9 @@ function loop(){
  draw(); requestAnimationFrame(loop);
 }
 function start(){
- let name=document.getElementById('name').value.trim()||'Tianran';
- player=new Snake(0,0,0,COLORS[skinIdx],name,true); player.length=10;
+ let name=document.getElementById('name').value.trim()||randomName();
+ godMode=document.getElementById('godToggle').checked;
+ player=new Snake(0,0,0,COLORS[skinIdx],name,true); player.length= godMode?60:10;
  bots=[]; for(let i=0;i<14;i++) bots.push(makeBot());
  foods=[]; spawnFood(450);
  document.getElementById('center').style.display='none'; running=true; updateHUD();
@@ -240,7 +248,7 @@ document.getElementById('play').onclick=start;
 document.getElementById('again').onclick=()=>{document.getElementById('dead').style.display='none';document.getElementById('menu').style.display='block';document.getElementById('center').style.display='flex'; if(false) start(); else { document.getElementById('center').style.display='flex'; } start(); };
 addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY});
 addEventListener('mousedown',()=>mouse.down=true); addEventListener('mouseup',()=>mouse.down=false);
-let keys={}; addEventListener('keydown',e=>{keys.space=e.code==='Space'}); addEventListener('keyup',e=>{if(e.code==='Space')keys.space=false});
+let keys={}; addEventListener('keydown',e=>{keys.space=e.code==='Space'; if(e.code==='KeyG'){godMode=!godMode; let t=document.getElementById('godToggle'); if(t)t.checked=godMode; showKill(godMode?'👑 GOD MODE ON 无敌开启':'GOD MODE OFF'); if(player)updateHUD();}}); addEventListener('keyup',e=>{if(e.code==='Space')keys.space=false});
 let boostTouch=false;
 document.getElementById('boostBtn').addEventListener('touchstart',e=>{e.preventDefault();boostTouch=true}); document.getElementById('boostBtn').addEventListener('touchend',()=>boostTouch=false);
 // joystick
